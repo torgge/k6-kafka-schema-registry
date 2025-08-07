@@ -91,7 +91,7 @@ services:
       - "6566:6566" # Expose port for k6 metrics
     environment:
       KAFKA_BROKER: kafka-k6:9092 # K6 connects to Kafka via its service name and PLAINTEXT listener
-      KAFKA_TOPIC: com.bonespirito.v1.order
+      KAFKA_TOPIC: com.bonespirito.v1.settings
       SCHEMA_REGISTRY_URL: http://schema-registry-k6:8081
       QUANTITY_OF_MESSAGES: 5
     depends_on:

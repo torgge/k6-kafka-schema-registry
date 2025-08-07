@@ -4,6 +4,7 @@ tests Kafka with a 1 Avro message per iteration.
 */
 
 import { check, sleep } from "k6";
+import { b64encode, b64decode } from "k6/encoding";
 import {
   SCHEMA_TYPE_AVRO
 } from "k6/x/kafka"; // import kafka extension
@@ -14,7 +15,6 @@ import {
   schemaRegistry,
   writer,
   reader,
-  keySchemaObject,
   valueSchemaObject,
   createTopicIfNotExists,
   closeAll,
@@ -59,18 +59,14 @@ export default function () {
     let correlationId = `${utils.uuidv4()}`;
     let messages = [
       {
-        key: schemaRegistry.serialize({
-          data: {
-            key: `key-${correlationId}`,
-          },
-          schema: keySchemaObject,
-          schemaType: SCHEMA_TYPE_AVRO,
-        }),
+        key: b64encode('ROUTER'), // Base64 encode using k6's function
         value: schemaRegistry.serialize({
           data: {
             id: index,
-            clientName: `client-${index}`,
-            items: getItems(index),
+            content: JSON.stringify({
+              clientName: `client-${index}`,
+              items: getItems(index),
+            }),
           },
           schema: valueSchemaObject,
           schemaType: SCHEMA_TYPE_AVRO,
@@ -91,39 +87,32 @@ export default function () {
   let messages = reader.consume({ limit: quantityOfMessages });
 
   messages.forEach(msg => {
-    console.log(`Consumed message value: ${JSON.stringify(schemaRegistry
-      .deserialize({
-        data: msg.value,
-        schema: valueSchemaObject,
-        schemaType: SCHEMA_TYPE_AVRO,
-      }).items[0])}`);
+    const deserializedValue = schemaRegistry.deserialize({
+      data: msg.value,
+      schema: valueSchemaObject,
+      schemaType: SCHEMA_TYPE_AVRO,
+    });
+    const contentData = JSON.parse(deserializedValue.content);
+    console.log(`Consumed message - ID: ${deserializedValue.id}, Content: ${JSON.stringify(contentData.items[0])}`);
   });
 
   check(messages, {
     [`${quantityOfMessages} message returned`]: (msgs) => msgs.length == quantityOfMessages,
-    "key starts with 'key-' string": (msgs) =>
-      schemaRegistry
-        .deserialize({
-          data: msgs[0].key,
-          schema: keySchemaObject,
-          schemaType: SCHEMA_TYPE_AVRO,
-        })
-        .key.startsWith("key-"),
-    "value contains 'clientName-' and 'productName-' strings": (msgs) =>
-      schemaRegistry
-        .deserialize({
-          data: msgs[0].value,
-          schema: valueSchemaObject,
-          schemaType: SCHEMA_TYPE_AVRO,
-        })
-        .clientName.startsWith("client-") &&
-      schemaRegistry
-        .deserialize({
-          data: msgs[0].value,
-          schema: valueSchemaObject,
-          schemaType: SCHEMA_TYPE_AVRO,
-        })
-        .items[0].productName.startsWith("product-"),
+    "key is 'ROUTER'": (msgs) => {
+      // Decode base64 key using k6's function
+      const key = b64decode(msgs[0].key, 'std', 's');
+      return key === 'ROUTER';
+    },
+    "value contains 'clientName-' and 'productName-' strings": (msgs) => {
+      const deserializedValue = schemaRegistry.deserialize({
+        data: msgs[0].value,
+        schema: valueSchemaObject,
+        schemaType: SCHEMA_TYPE_AVRO,
+      });
+      const contentData = JSON.parse(deserializedValue.content);
+      return contentData.clientName.startsWith("client-") &&
+             contentData.items[0].productName.startsWith("product-");
+    },
   });
 }
 

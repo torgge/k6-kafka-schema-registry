@@ -3,7 +3,6 @@ import {
     Reader,
     Connection,
     SchemaRegistry,
-    KEY,
     VALUE,
     TOPIC_NAME_STRATEGY,
     SCHEMA_TYPE_AVRO,
@@ -15,7 +14,6 @@ import {
     registry,
 } from "../utils/envs.js";
 
-const keySchema = open('../schemas/order-key.avsc');
 const valueSchema = open('../schemas/order-value.avsc');
 
 const connection = new Connection({
@@ -39,24 +37,11 @@ const reader = new Reader({
     groupTopics: [topic],
 });
 
-const keySubjectName = schemaRegistry.getSubjectName({
-    topic: topic,
-    element: KEY,
-    subjectNameStrategy: TOPIC_NAME_STRATEGY,
-    schema: keySchema,
-});
-
 const valueSubjectName = schemaRegistry.getSubjectName({
     topic: topic,
     element: VALUE,
     subjectNameStrategy: TOPIC_NAME_STRATEGY,
     schema: valueSchema,
-});
-
-const keySchemaObject = schemaRegistry.createSchema({
-    subject: keySubjectName,
-    schema: keySchema,
-    schemaType: SCHEMA_TYPE_AVRO,
 });
 
 const valueSchemaObject = schemaRegistry.createSchema({
@@ -96,11 +81,9 @@ export {
     schemaRegistry,
     writer,
     reader,
-    keySchemaObject,
     valueSchemaObject,
     topic,
     brokers,
-    keySubjectName,
     valueSubjectName,
     createTopicIfNotExists,
     closeAll,
