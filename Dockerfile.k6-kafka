@@ -14,10 +14,7 @@ WORKDIR /build
 # Build k6 with all desired extensions in a single command
 # NOTE: github.com/grafana/xk6-amqp is archived and removed from this example.
 RUN xk6 build \
-    --with github.com/grafana/xk6-sql@latest \
-    --with github.com/grafana/xk6-sql-driver-postgres@latest \
     --with github.com/mostafa/xk6-kafka@latest \
-    --with github.com/grafana/xk6-amqp@latest \
     --with github.com/grafana/xk6-dashboard@latest
 
 # Final image
@@ -28,13 +25,7 @@ RUN apk add --no-cache ca-certificates
 
 # Copy the built k6 binary from the builder stage
 COPY --from=builder /build/k6 /usr/bin/k6
-
-# Set environment variables for the K6 script (these are defaults, can be overridden by docker-compose)
-ENV PG_HOST=postgres
-ENV PG_PORT=5432
-ENV PG_USER=myuser
-# Do not set PG_PASSWORD here; pass it securely at runtime via environment variables or Docker secrets
-ENV PG_DATABASE=mydatabase
+# Set the working directory
 ENV KAFKA_BROKER=kafka:9092
 ENV KAFKA_TOPIC=mytopic
 ENV KAFKA_GROUP_ID=mygroup
@@ -48,10 +39,10 @@ RUN mkdir -p /k6/infra && chmod a+rwx /k6/infra
 RUN mkdir -p /k6/utils && chmod a+rwx /k6/utils
 
 # Copy the k6 script into the container
-COPY ./k6/kafka/schemas/*.avsc /k6/schemas/
-COPY ./k6/kafka/k6-kafka.js /k6/k6-script.js
-COPY ./k6/kafka/infra/kafka-config.js /k6/infra/kafka-config.js
-COPY ./k6/kafka/utils/ /k6/utils/
+COPY ./kafka/schemas/*.avsc /k6/schemas/
+COPY ./kafka/k6-kafka.js /k6/k6-script.js
+COPY ./kafka/infra/kafka-config.js /k6/infra/kafka-config.js
+COPY ./kafka/utils/ /k6/utils/
 
 WORKDIR /k6
 
@@ -72,4 +63,4 @@ EXPOSE 5665
 HEALTHCHECK --interval=30s --timeout=60s --start-period=5s --retries=3 CMD k6 status || exit 1
 
 # Metadata for image
-LABEL description="K6 performance testing image with SQL (PostgreSQL) and Kafka extensions."
+LABEL description="K6 performance testing image with Kafka extensions."

@@ -9,7 +9,7 @@ import {
 } from "k6/x/kafka"; // import kafka extension
 import { Trend } from "k6/metrics"; // import k6 metrics
 import * as utils from "./utils/utils.js";
-import { quantityOfMessage } from "./utils/envs.js";
+import { quantityOfMessages } from "./utils/envs.js";
 import {
   schemaRegistry,
   writer,
@@ -22,14 +22,13 @@ import {
 } from "./infra/kafka-config.js";
 
 export const options = {
-  stages: [
-    // Ramp up to 5 users over 30 seconds
-    { duration: "30s", target: 5 },
-    // Maintain steady state of 10 users over the next 30 seconds
-    { duration: "30s", target: 10 },
-    // Ramp down to 0 users over the next 30 seconds
-    { duration: "30s", target: 0 },
-  ],
+  scenarios: {
+    default: {
+      executor: 'per-vu-iterations',
+      vus: 1,
+      iterations: 1,
+    },
+  },
 };
 
 function getItems(index) {
@@ -56,7 +55,7 @@ export function setup() {
 export default function () {
   const start = new Date().getTime();
 
-  for (let index = 0; index < quantityOfMessage; index++) {
+  for (let index = 0; index < quantityOfMessages; index++) {
     let correlationId = `${utils.uuidv4()}`;
     let messages = [
       {
@@ -89,10 +88,19 @@ export default function () {
   // Wait for the messages to be produced
   produceDuration.add(new Date().getTime() - start);
 
-  let messages = reader.consume({ limit: quantityOfMessage, timeout: 60000 }); // 60 segundos
+  let messages = reader.consume({ limit: quantityOfMessages });
+
+  messages.forEach(msg => {
+    console.log(`Consumed message value: ${JSON.stringify(schemaRegistry
+      .deserialize({
+        data: msg.value,
+        schema: valueSchemaObject,
+        schemaType: SCHEMA_TYPE_AVRO,
+      }).items[0])}`);
+  });
 
   check(messages, {
-    [`${quantityOfMessage} message returned`]: (msgs) => msgs.length == quantityOfMessage,
+    [`${quantityOfMessages} message returned`]: (msgs) => msgs.length == quantityOfMessages,
     "key starts with 'key-' string": (msgs) =>
       schemaRegistry
         .deserialize({

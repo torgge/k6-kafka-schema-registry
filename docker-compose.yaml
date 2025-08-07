@@ -1,0 +1,113 @@
+name: kafka-postgres-k6
+services:
+  kafka-k6:
+    image: bitnami/kafka:4.0.0
+    container_name: kafka-k6
+    hostname: kafka-k6
+    ports:
+      - "9092:9092" # For host access to PLAINTEXT listener
+      - "9094:9094" # For host access to EXTERNAL listener
+    volumes:
+      - "kafka_data:/bitnami"
+    environment:
+      - KAFKA_ENABLE_KRAFT=yes
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      # Corrected LISTENERS and ADVERTISED_LISTENERS for proper inter-container and host access
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      # IMPORTANT: If k6 connects via kafka:9092, then PLAINTEXT should be advertised as kafka:9092
+      # If your host connects via 127.0.0.1:9092, then PLAINTEXT should be advertised with host's IP/hostname,
+      # or 127.0.0.1 if only for internal host access.
+      # For simplicity and inter-container communication, we assume k6 uses kafka:9092.
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka-k6:9092,EXTERNAL://kafka-k6:9094
+      - KAFKA_BROKER_ID=1 # Corrected typo: kafkaROKER_ID -> KAFKA_BROKER_ID
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@127.0.0.1:9093 # Assumes single node
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_NUM_PARTITIONS=5 # Default number of partitions for new topics
+    healthcheck:
+      # Use full path for robustness
+      test: ["CMD", "/opt/bitnami/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # Give Kafka more time to start up
+    networks:
+      - app_network # Use a common network
+
+  kafka-ui-k6:
+    container_name: kafka-ui-k6
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      kafka-k6:
+        condition: service_healthy
+      schema-registry-k6:
+        condition: service_healthy
+    ports:
+      - 8080:8080
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      # Configure Kafka-UI to connect to Kafka's advertised listeners
+      KAFKA_CLUSTERS_0_NAME: 'local-kafka'
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka-k6:9092' # Connect via the PLAINTEXT listener for UI
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: 'http://schema-registry-k6:8081' # Uncomment if you want Schema Registry integration
+    networks:
+      - app_network
+
+  schema-registry-k6:
+    image: confluentinc/cp-schema-registry:latest
+    hostname: schema-registry-k6
+    depends_on:
+      kafka-k6:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry-k6
+      # Connect to the correct Kafka listener advertised for Schema Registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka-k6:9094
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  k6-kafka:
+    build:
+      context: .
+      dockerfile: Dockerfile.k6-kafka # Ensure this path is correct relative to docker-compose.yml
+    container_name: k6-kafka
+    # Mount the 'k6' directory to '/k6' inside the container
+    volumes:
+      # Mount the named volume for k6 results
+      - ./kafka/results:/k6/results
+    ports:
+      - "5665:5665" # Expose port for k6 dashboard
+      - "6566:6566" # Expose port for k6 metrics
+    environment:
+      KAFKA_BROKER: kafka-k6:9092 # K6 connects to Kafka via its service name and PLAINTEXT listener
+      KAFKA_TOPIC: com.bonespirito.v1.order
+      SCHEMA_REGISTRY_URL: http://schema-registry-k6:8081
+      QUANTITY_OF_MESSAGES: 5
+    depends_on:
+      kafka-k6:
+        condition: service_healthy
+      schema-registry-k6:
+        condition: service_healthy
+    command: run --summary-export=/k6/results/summary.json --out dashboard=export=/k6/results/test-report.html --out json=/k6/results/output.json k6-script.js
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+volumes:
+  kafka_data:
+    driver: local
+  k6_results:
+    driver: local
