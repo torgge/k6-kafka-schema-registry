@@ -6,7 +6,8 @@ tests Kafka with a 1 Avro message per iteration.
 import { check, sleep } from "k6";
 import { b64encode, b64decode } from "k6/encoding";
 import {
-  SCHEMA_TYPE_AVRO
+  SCHEMA_TYPE_AVRO,
+  SCHEMA_TYPE_STRING
 } from "k6/x/kafka"; // import kafka extension
 import { Trend } from "k6/metrics"; // import k6 metrics
 import * as utils from "./utils/utils.js";
@@ -59,7 +60,10 @@ export default function () {
     let correlationId = `${utils.uuidv4()}`;
     let messages = [
       {
-        key: b64encode('ROUTER'), // Base64 encode using k6's function
+        key: schemaRegistry.serialize({
+          data: index % 2 === 0 ? 'ROUTER' : 'CHANNEL', // Pass string directly, not object
+          schemaType: SCHEMA_TYPE_STRING,
+        }),
         value: schemaRegistry.serialize({
           data: {
             id: index,
@@ -79,13 +83,14 @@ export default function () {
       },
     ];
     writer.produce({ messages: messages });
-    sleep(1); // Sleep to simulate some delay between message production
+    sleep(1);
   }
-  // Wait for the messages to be produced
+  
   produceDuration.add(new Date().getTime() - start);
 
   let messages = reader.consume({ limit: quantityOfMessages });
 
+  console.log(`Consumed ${messages.length} messages`);
   messages.forEach(msg => {
     const deserializedValue = schemaRegistry.deserialize({
       data: msg.value,
@@ -95,13 +100,20 @@ export default function () {
     const contentData = JSON.parse(deserializedValue.content);
     console.log(`Consumed message - ID: ${deserializedValue.id}, Content: ${JSON.stringify(contentData.items[0])}`);
   });
+  console.log(`*******************************************`);
 
   check(messages, {
     [`${quantityOfMessages} message returned`]: (msgs) => msgs.length == quantityOfMessages,
-    "key is 'ROUTER'": (msgs) => {
-      // Decode base64 key using k6's function
-      const key = b64decode(msgs[0].key, 'std', 's');
-      return key === 'ROUTER';
+    "key is either 'ROUTER' or 'CHANNEL'": (msgs) => {
+      // Check all messages have valid keys
+      return msgs.every(msg => {
+        const key = schemaRegistry.deserialize({
+          data: msg.key,
+          schemaType: SCHEMA_TYPE_STRING,
+        });
+        console.log(`Key: ${key}`);
+        return key === 'ROUTER' || key === 'CHANNEL';
+      });
     },
     "value contains 'clientName-' and 'productName-' strings": (msgs) => {
       const deserializedValue = schemaRegistry.deserialize({

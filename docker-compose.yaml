@@ -93,7 +93,7 @@ services:
       KAFKA_BROKER: kafka-k6:9092 # K6 connects to Kafka via its service name and PLAINTEXT listener
       KAFKA_TOPIC: com.bonespirito.v1.settings
       SCHEMA_REGISTRY_URL: http://schema-registry-k6:8081
-      QUANTITY_OF_MESSAGES: 5
+      QUANTITY_OF_MESSAGES: 10
     depends_on:
       kafka-k6:
         condition: service_healthy
