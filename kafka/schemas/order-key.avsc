@@ -1,0 +1,12 @@
+{
+  "name": "OrderKey",
+  "namespace": "com.bonespirito.selling.order",
+  "type": "record",
+  "fields": [
+    {
+      "name": "key",
+      "type": "string",
+      "doc": "A key."
+    }
+  ]
+}
